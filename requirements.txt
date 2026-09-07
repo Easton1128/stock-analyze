@@ -1,0 +1,1 @@
+# Standard-library-only fetcher; no third-party packages required.
