@@ -1,0 +1,60 @@
+name: Market Auto Snapshot
+
+on:
+  # 直接按交易所收盘后的本地时间触发，GitHub Actions 支持 IANA timezone，避免美股夏令时错位。
+  # 其中每个市场每天三次：T+2h / T+2.5h / T+3h。
+  schedule:
+    - cron: '0 17 * * MON-FRI'
+      timezone: 'Asia/Shanghai'
+    - cron: '30 17 * * MON-FRI'
+      timezone: 'Asia/Shanghai'
+    - cron: '0 18 * * MON-FRI'
+      timezone: 'Asia/Shanghai'
+    - cron: '0 18 * * 1-5'
+      timezone: 'America/New_York'
+    - cron: '30 18 * * 1-5'
+      timezone: 'America/New_York'
+    - cron: '0 19 * * 1-5'
+      timezone: 'America/New_York'
+  workflow_dispatch:
+
+jobs:
+  fetch-a:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 17 * * MON-FRI' || github.event.schedule == '30 17 * * MON-FRI' || github.event.schedule == '0 18 * * MON-FRI'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Fetch A-share snapshot
+        run: python3 market_fetch.py --market A
+      - name: Commit A-share snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market-auto.json
+          git diff --cached --quiet || git commit -m "chore: update A-share market snapshot"
+          git push
+
+  fetch-us:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 18 * * 1-5' || github.event.schedule == '30 18 * * 1-5' || github.event.schedule == '0 19 * * 1-5'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Fetch US snapshot
+        run: python3 market_fetch.py --market US
+      - name: Commit US snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market-auto.json
+          git diff --cached --quiet || git commit -m "chore: update US market snapshot"
+          git push
