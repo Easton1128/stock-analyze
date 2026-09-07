@@ -30,14 +30,23 @@ jobs:
         with:
           python-version: '3.x'
       - name: Fetch A-share snapshot
+        id: fetch
+        continue-on-error: true
         run: python3 market_fetch.py --market A
       - name: Commit A-share snapshot
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/market-auto.json
           git diff --cached --quiet || git commit -m "chore: update A-share market snapshot"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
+      - name: Surface fetch failure (after commit is safely pushed)
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "抓取脚本本次报告了错误，已经把 fetch_errors 记录并提交到 data/market-auto.json，前端会显示醒目提醒。这一步只是让本次 workflow 在列表里显示为失败，方便你注意到——具体原因请看上面 'Fetch A-share snapshot' 步骤的日志。"
+          exit 1
 
   fetch-us:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 18 * * 1-5' || github.event.schedule == '30 18 * * 1-5' || github.event.schedule == '0 19 * * 1-5'
@@ -50,11 +59,20 @@ jobs:
         with:
           python-version: '3.x'
       - name: Fetch US snapshot
+        id: fetch
+        continue-on-error: true
         run: python3 market_fetch.py --market US
       - name: Commit US snapshot
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/market-auto.json
           git diff --cached --quiet || git commit -m "chore: update US market snapshot"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
+      - name: Surface fetch failure (after commit is safely pushed)
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "抓取脚本本次报告了错误，已经把 fetch_errors 记录并提交到 data/market-auto.json，前端会显示醒目提醒。这一步只是让本次 workflow 在列表里显示为失败，方便你注意到——具体原因请看上面 'Fetch US snapshot' 步骤的日志。"
+          exit 1
