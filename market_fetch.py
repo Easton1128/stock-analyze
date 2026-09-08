@@ -86,6 +86,11 @@ def northbound_flow():
 def a_snapshot(now):
     rows=eastmoney_stocks()
     if not rows: raise RuntimeError('Eastmoney A-share quote returned no rows')
+    # [P2新增] 最基本的数据健全性校验：A股实际挂牌数常年在5000+，
+    # 如果接口被限流/分页中途中断，可能只拿回几百条却不报错——那样算出来的涨跌家数/成交额
+    # 会基于一个严重不具代表性的样本，比"抓取失败"更危险（因为它看起来像是正常数据）。
+    if len(rows) < 3000:
+        raise RuntimeError(f'Eastmoney A-share quote only returned {len(rows)} rows (expected 3000+); likely partial/rate-limited response, treating as failure rather than committing a skewed score')
     valid=[r for r in rows if num(r.get('f2'),0)>0]
     up=sum(num(r.get('f3'))>0 for r in valid)
     down=sum(num(r.get('f3'))<0 for r in valid)
@@ -135,6 +140,10 @@ def us_snapshot(now):
     # Public Yahoo endpoints provide robust index/VIX snapshots without credentials.
     sp=yahoo_chart('^GSPC',now) or {}
     vx=yahoo_chart('^VIX',now) or {}
+    # [P2新增] 如果标普和VIX两个端点都拿不到收盘价，说明Yahoo接口本身失败了；
+    # 之前的写法会静默退回默认值（vix=20中性值、turnover=0），产生一条"看起来正常"但其实是假数据的记录。
+    if sp.get('close') is None and vx.get('close') is None:
+        raise RuntimeError('Yahoo chart endpoint returned no usable data for ^GSPC/^VIX')
     vix=num(vx.get('close'),20)
     # Without a stable public full-US breadth endpoint, do not fabricate up/down/new-high/new-low.
     up=down=0; newhigh=newlow=0
@@ -203,18 +212,35 @@ def main():
         data={'schema_version':1,'generated_at':None,'markets':{'A':{'latest':None,'runs':[]},'US':{'latest':None,'runs':[]}}}
     data['schema_version']=1
     data['generated_at']=now_utc.isoformat(timespec='seconds')
-    errors=[]
+    # [P2修复] fetch_errors 按市场分别保存，不再是一个被整体覆盖的共享数组。
+    # 原因：A股和美股是两个独立的 GitHub Actions job、分别调用本脚本（--market A / --market US），
+    # 旧写法每次都用 data['fetch_errors']=本次的errors 整体覆盖，导致后运行的那个市场
+    # 哪怕自己完全成功（errors=[]），也会把另一个市场刚记录下的失败信息一起抹掉，
+    # 前端因此完全看不到"某个市场其实抓取失败了"这个事实。
+    prev_errors = data.get('fetch_errors')
+    if not isinstance(prev_errors, dict):
+        prev_errors = {}  # 兼容旧schema（数组形式）：直接丢弃，从这次运行开始改用按市场记录
+    errors_by_market = {}
     if args.market in ('A','ALL'):
-        try: update_market(data,'A',a_snapshot(now_a))
-        except Exception as e: errors.append('A: '+str(e))
+        try:
+            update_market(data,'A',a_snapshot(now_a))
+            errors_by_market['A']=[]
+        except Exception as e:
+            errors_by_market['A']=['A: '+str(e)]
     if args.market in ('US','ALL'):
-        try: update_market(data,'US',us_snapshot(now_us))
-        except Exception as e: errors.append('US: '+str(e))
-    data['fetch_errors']=errors
+        try:
+            update_market(data,'US',us_snapshot(now_us))
+            errors_by_market['US']=[]
+        except Exception as e:
+            errors_by_market['US']=['US: '+str(e)]
+    merged_errors = dict(prev_errors)
+    merged_errors.update(errors_by_market)
+    data['fetch_errors']=merged_errors
+    all_errors = [e for lst in errors_by_market.values() for e in lst]
     tmp=OUT+'.tmp'
     with open(tmp,'w',encoding='utf-8') as f: json.dump(data,f,ensure_ascii=False,indent=2)
     os.replace(tmp,OUT)
-    print(json.dumps({'output':OUT,'generated_at':data['generated_at'],'errors':errors,'A_runs':len(data['markets']['A']['runs']),'US_runs':len(data['markets']['US']['runs'])},ensure_ascii=False))
-    return 0 if not errors else 2
+    print(json.dumps({'output':OUT,'generated_at':data['generated_at'],'errors':all_errors,'fetch_errors':merged_errors,'A_runs':len(data['markets']['A']['runs']),'US_runs':len(data['markets']['US']['runs'])},ensure_ascii=False))
+    return 0 if not all_errors else 2
 
 if __name__=='__main__': sys.exit(main())
