@@ -49,7 +49,14 @@ jobs:
           exit 1
 
   fetch-us:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 18 * * 1-5' || github.event.schedule == '30 18 * * 1-5' || github.event.schedule == '0 19 * * 1-5'
+    # [P2修复] 加 needs: fetch-a，强制两个job排队执行，而不是并发同时改同一个data/market-auto.json。
+    # 之前两个job并发运行时，谁先push谁就把远程往前推一步，后完成的那个job虽然加了
+    # git pull --rebase，但如果两边改的是文件里相邻/重叠的内容（比如都要改顶层generated_at字段），
+    # 依然会产生真正的文本冲突导致rebase失败——需要靠严格排队而不是"事后补救"来根治。
+    # if 里的 always() 是必须的：否则只要 fetch-a 因为脚本抓取失败而整体标记为失败，
+    # fetch-us 会被GitHub Actions默认跳过，即使美股这边完全没问题也不会运行。
+    needs: fetch-a
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 18 * * 1-5' || github.event.schedule == '30 18 * * 1-5' || github.event.schedule == '0 19 * * 1-5')
     runs-on: ubuntu-latest
     permissions:
       contents: write
