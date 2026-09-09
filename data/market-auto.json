@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-09T13:32:42+00:00",
+  "generated_at": "2026-09-09T13:47:23+00:00",
   "markets": {
     "A": {
       "latest": null,
@@ -117,7 +117,7 @@
   },
   "fetch_errors": {
     "A": [
-      "A: HTTP Error 502: Bad Gateway"
+      "A: Remote end closed connection without response"
     ],
     "US": []
   }
