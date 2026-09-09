@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-09T00:52:06+00:00",
+  "generated_at": "2026-09-09T13:32:42+00:00",
   "markets": {
     "A": {
       "latest": null,
@@ -117,7 +117,7 @@
   },
   "fetch_errors": {
     "A": [
-      "A: Eastmoney A-share quote only returned 100 rows (expected 3000+); likely partial/rate-limited response, treating as failure rather than committing a skewed score"
+      "A: HTTP Error 502: Bad Gateway"
     ],
     "US": []
   }
