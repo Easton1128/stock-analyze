@@ -1257,6 +1257,7 @@
       <div class="mtitle">今日主线板块</div>
       <div class="mvalue" id="mainlineValue">--</div>
       <div class="sector-chips" id="sectorChips"></div>
+      <div class="helper" id="mainlineStageInfo" style="display:none;"></div>
     </div>
 
     <div class="multiplier-note">
@@ -1405,6 +1406,13 @@
     <div class="subscore-row">
       <div class="subscore-label"><span>10Y-2Y国债收益率曲线</span><b id="sub_curve">--/10</b></div>
       <div class="subscore-track"><div class="subscore-fill" id="fill_curve" style="width:0%;"></div></div>
+    </div>
+
+    <div class="mainline-box" id="mainlineBoxUS" style="display:none;">
+      <div class="mtitle">今日主线板块（用行业ETF当日涨跌幅代理，不是资金流）</div>
+      <div class="mvalue" id="mainlineValueUS">--</div>
+      <div class="sector-chips" id="sectorChipsUS"></div>
+      <div class="helper" id="mainlineStageInfoUS" style="display:none;"></div>
     </div>
 
     <div class="multiplier-note">
@@ -3074,18 +3082,35 @@ MSFT|云/AI|500|455|620|35|24|16|45|31|4"></textarea>
     tl.style.color = tier.color; tl.style.background = tier.bg;
     document.getElementById('heatTierDate').textContent = heat.date;
 
-    document.getElementById('sub_turnover').textContent = heat.turnoverScore+'/20';
-    document.getElementById('fill_turnover').style.width = (heat.turnoverScore/20*100)+'%';
-    document.getElementById('sub_inflow').textContent = heat.inflowScore+'/20';
-    document.getElementById('fill_inflow').style.width = (heat.inflowScore/20*100)+'%';
-    document.getElementById('sub_breadth').textContent = heat.breadthScore+'/15';
-    document.getElementById('fill_breadth').style.width = (heat.breadthScore/15*100)+'%';
-    document.getElementById('sub_limit').textContent = heat.limitScore+'/15';
-    document.getElementById('fill_limit').style.width = (heat.limitScore/15*100)+'%';
-    document.getElementById('sub_seal').textContent = heat.sealScore+'/15';
-    document.getElementById('fill_seal').style.width = (heat.sealScore/15*100)+'%';
-    document.getElementById('sub_ladder').textContent = heat.ladderScore+'/15';
-    document.getElementById('fill_ladder').style.width = (heat.ladderScore/15*100)+'%';
+    // [方案B新增] 自动抓取(formula_version:2)和手工录入用的是两套不同权重的公式：
+    // 手工录入时用户能亲自核实主力资金净流入/连板梯队，这两项是真实数据，继续计入总分(维持原100分结构)；
+    // 自动抓取拿不到这两项的真实数据，改成只用成交量能/涨跌家数/涨跌停/封板率四项凑满100分，
+    // 主力净流入/连板梯队降级为仅供参考、不计入总分。这里按记录本身的字段判断该用哪套上限来画进度条。
+    var isAutoV2 = heat.formula_version===2 || (heat.inflowScore===undefined && heat.ladderScore===undefined);
+    var maxTurnover=isAutoV2?30:20, maxBreadth=isAutoV2?25:15, maxLimit=isAutoV2?25:15, maxSeal=isAutoV2?20:15;
+    document.getElementById('sub_turnover').textContent = heat.turnoverScore+'/'+maxTurnover;
+    document.getElementById('fill_turnover').style.width = (heat.turnoverScore/maxTurnover*100)+'%';
+    document.getElementById('sub_breadth').textContent = heat.breadthScore+'/'+maxBreadth;
+    document.getElementById('fill_breadth').style.width = (heat.breadthScore/maxBreadth*100)+'%';
+    document.getElementById('sub_limit').textContent = heat.limitScore+'/'+maxLimit;
+    document.getElementById('fill_limit').style.width = (heat.limitScore/maxLimit*100)+'%';
+    document.getElementById('sub_seal').textContent = heat.sealScore+'/'+maxSeal;
+    document.getElementById('fill_seal').style.width = (heat.sealScore/maxSeal*100)+'%';
+
+    var inflowEl=document.getElementById('sub_inflow'), inflowFill=document.getElementById('fill_inflow');
+    var ladderEl=document.getElementById('sub_ladder'), ladderFill=document.getElementById('fill_ladder');
+    if(isAutoV2){
+      // 自动抓取：这两项只是参考值，明确标注"不计入总分"，不画满进度条以免误读成"拿了满分/零分"。
+      if(inflowEl){ inflowEl.textContent='参考值·不计入总分'; inflowEl.style.opacity='0.55'; }
+      if(inflowFill){ inflowFill.style.width='0%'; }
+      if(ladderEl){ ladderEl.textContent='参考值·不计入总分'; ladderEl.style.opacity='0.55'; }
+      if(ladderFill){ ladderFill.style.width='0%'; }
+    }else{
+      if(inflowEl){ inflowEl.style.opacity='1'; inflowEl.textContent=heat.inflowScore+'/20'; }
+      if(inflowFill){ inflowFill.style.width=(heat.inflowScore/20*100)+'%'; }
+      if(ladderEl){ ladderEl.style.opacity='1'; ladderEl.textContent=heat.ladderScore+'/15'; }
+      if(ladderFill){ ladderFill.style.width=(heat.ladderScore/15*100)+'%'; }
+    }
 
     var mbox = document.getElementById('mainlineBox');
     if(heat.mainline || (heat.sectors && heat.sectors.length)){
@@ -3094,6 +3119,17 @@ MSFT|云/AI|500|455|620|35|24|16|45|31|4"></textarea>
       document.getElementById('sectorChips').innerHTML = (heat.sectors||[]).map(function(s,i){
         return '<span class="sector-chip"><span class="rank">TOP'+(i+1)+'</span>'+s+'</span>';
       }).join('');
+      // [新增] 主线板块所处阶段 + 起始日期（自动抓取路径专属；手工录入没有这几个字段则不显示）
+      var stageInfo = document.getElementById('mainlineStageInfo');
+      if(stageInfo){
+        if(heat.mainlineStage && heat.mainlineDays){
+          var stageColor = heat.mainlineStage==='退潮观察期' ? 'var(--warn)' : (heat.mainlineStage==='主升期' ? 'var(--success)' : 'var(--text-3)');
+          stageInfo.style.display='block';
+          stageInfo.innerHTML = '<span style="color:'+stageColor+';font-weight:600;">'+heat.mainlineStage+'</span>　已连续 '+heat.mainlineDays+' 个交易日（自 '+heat.mainlineStartDate+' 起）'+(heat.mainlineStage==='退潮观察期'?'　⚠ 持续偏长，注意资金是否已开始撤离':'');
+        } else {
+          stageInfo.style.display='none';
+        }
+      }
     } else { mbox.style.display='none'; }
 
     document.getElementById('multiplierNum').textContent = '×'+tier.mult.toFixed(2);
@@ -3251,21 +3287,54 @@ MSFT|云/AI|500|455|620|35|24|16|45|31|4"></textarea>
     tl.textContent = tier.label; tl.style.color = tier.color; tl.style.background = tier.bg;
     var feelUS = computeFeelsLike('nonA', heat.score);
     document.getElementById('heatTierDateUS').textContent = heat.date+'　体感'+feelUS.feels+'分'+(feelUS.hasPositions?'（持仓β'+fmt(feelUS.avgBeta,2)+'）':'');
-    document.getElementById('sub_turnoverUS').textContent = heat.turnoverScore+'/15';
-    document.getElementById('fill_turnoverUS').style.width = (heat.turnoverScore/15*100)+'%';
-    document.getElementById('sub_capex').textContent = heat.capexScore+'/15';
-    document.getElementById('fill_capex').style.width = (heat.capexScore/15*100)+'%';
-    document.getElementById('sub_vix').textContent = heat.vixScore+'/20';
-    document.getElementById('fill_vix').style.width = (heat.vixScore/20*100)+'%';
-    document.getElementById('sub_breadthUS').textContent = heat.breadthScore+'/15';
-    document.getElementById('fill_breadthUS').style.width = (heat.breadthScore/15*100)+'%';
-    document.getElementById('sub_highlow').textContent = heat.highlowScore+'/10';
-    document.getElementById('fill_highlow').style.width = (heat.highlowScore/10*100)+'%';
-    document.getElementById('sub_credit').textContent = heat.creditScore+'/15';
-    document.getElementById('fill_credit').style.width = (heat.creditScore/15*100)+'%';
-    document.getElementById('sub_curve').textContent = heat.curveScore+'/10';
-    document.getElementById('fill_curve').style.width = (heat.curveScore/10*100)+'%';
+    // [方案B新增] 同A股：自动抓取(formula_version:2)只有量能(基准现在是真实滚动均值)和VIX两项是真实数据，
+    // 其余capex/breadth/highlow/credit/curve目前没有零成本真实数据源，降级为参考值、不计入总分。
+    var isAutoV2 = heat.formula_version===2 || heat.capexScore===undefined;
+    var maxTurnoverUS=isAutoV2?40:15, maxVix=isAutoV2?60:20;
+    document.getElementById('sub_turnoverUS').textContent = heat.turnoverScore+'/'+maxTurnoverUS;
+    document.getElementById('fill_turnoverUS').style.width = (heat.turnoverScore/maxTurnoverUS*100)+'%';
+    document.getElementById('sub_vix').textContent = heat.vixScore+'/'+maxVix;
+    document.getElementById('fill_vix').style.width = (heat.vixScore/maxVix*100)+'%';
+    var refPairs=[['sub_capex','fill_capex'],['sub_breadthUS','fill_breadthUS'],['sub_highlow','fill_highlow'],['sub_credit','fill_credit'],['sub_curve','fill_curve']];
+    var refMaxes={sub_capex:15,sub_breadthUS:15,sub_highlow:10,sub_credit:15,sub_curve:10};
+    if(isAutoV2){
+      refPairs.forEach(function(p){
+        var el=document.getElementById(p[0]), fill=document.getElementById(p[1]);
+        if(el){ el.textContent='参考值·不计入总分'; el.style.opacity='0.55'; }
+        if(fill){ fill.style.width='0%'; }
+      });
+    }else{
+      var vals={sub_capex:heat.capexScore,sub_breadthUS:heat.breadthScore,sub_highlow:heat.highlowScore,sub_credit:heat.creditScore,sub_curve:heat.curveScore};
+      refPairs.forEach(function(p){
+        var el=document.getElementById(p[0]), fill=document.getElementById(p[1]), max=refMaxes[p[0]], v=vals[p[0]];
+        if(el){ el.style.opacity='1'; el.textContent=v+'/'+max; }
+        if(fill){ fill.style.width=(v/max*100)+'%'; }
+      });
+    }
     document.getElementById('multiplierNumUS').textContent = '×'+heatTier(feelUS.feels).mult.toFixed(2);
+
+    // [第2步：美股主线板块] 跟A股同款展示逻辑：mainlineStage/mainlineDays/mainlineStartDate
+    // 是自动抓取路径专属字段，手工录入没有这几个字段时直接隐藏整个box，不报错。
+    var mboxUS = document.getElementById('mainlineBoxUS');
+    if(mboxUS){
+      if(heat.mainline || (heat.sectors && heat.sectors.length)){
+        mboxUS.style.display='block';
+        document.getElementById('mainlineValueUS').textContent = heat.mainline || '未填写';
+        document.getElementById('sectorChipsUS').innerHTML = (heat.sectors||[]).map(function(s,i){
+          return '<span class="sector-chip"><span class="rank">TOP'+(i+1)+'</span>'+s+'</span>';
+        }).join('');
+        var stageInfoUS = document.getElementById('mainlineStageInfoUS');
+        if(stageInfoUS){
+          if(heat.mainlineStage && heat.mainlineDays){
+            var stageColorUS = heat.mainlineStage==='退潮观察期' ? 'var(--warn)' : (heat.mainlineStage==='主升期' ? 'var(--success)' : 'var(--text-3)');
+            stageInfoUS.style.display='block';
+            stageInfoUS.innerHTML = '<span style="color:'+stageColorUS+';font-weight:600;">'+heat.mainlineStage+'</span>　已连续 '+heat.mainlineDays+' 个交易日（自 '+heat.mainlineStartDate+' 起）'+(heat.mainlineStage==='退潮观察期'?'　⚠ 持续偏长，注意是否已经涨过头':'');
+          } else {
+            stageInfoUS.style.display='none';
+          }
+        }
+      } else { mboxUS.style.display='none'; }
+    }
 
     var ecUS = document.getElementById('extraContextUS');
     if(ecUS){
