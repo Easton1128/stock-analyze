@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-26T01:03:37+00:00",
+  "generated_at": "2026-09-28T17:27:37+00:00",
   "markets": {
     "A": {
       "latest": {
@@ -1006,7 +1006,9 @@
     }
   },
   "fetch_errors": {
-    "A": [],
+    "A": [
+      "A: both sources failed — eastmoney: Eastmoney A-share quote kept returning too few rows after 3 attempts (HTTP Error 502: Bad Gateway); likely throttled by the data source for this network, treating as failure rather than committing a skewed score; sina fallback: The read operation timed out"
+    ],
     "US": []
   }
 }
